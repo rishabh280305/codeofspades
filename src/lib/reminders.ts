@@ -1,0 +1,31 @@
+import { Resend } from "resend";
+
+const resendApiKey = process.env.RESEND_API_KEY?.trim();
+const fromEmail = process.env.RESEND_FROM_EMAIL?.trim();
+
+const resend = resendApiKey ? new Resend(resendApiKey) : null;
+
+export async function sendAppointmentEmail(params: {
+  to?: string;
+  subject: string;
+  html: string;
+}) {
+  const to = params.to?.trim();
+  if (!to || !resend || !fromEmail) {
+    return { skipped: true, reason: "missing-config-or-recipient" };
+  }
+
+  try {
+    await resend.emails.send({
+      from: fromEmail,
+      to,
+      subject: params.subject,
+      html: params.html,
+    });
+  } catch (error) {
+    console.error("Appointment email failed", error);
+    return { skipped: true, reason: "provider-error" };
+  }
+
+  return { skipped: false, reason: null };
+}

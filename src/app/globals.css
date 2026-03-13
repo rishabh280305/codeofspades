@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f8ff;
+  --foreground: #121212;
+  --panel: #e8edff;
+  --bg: #f4fbf4;
+  --accent: #ffd66b;
+  --accent-2: #9fe3b0;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-space-grotesk);
+  --font-mono: var(--font-space-mono);
+}
+
+body {
+  background: linear-gradient(135deg, #f4f8ff 0%, #fff8ef 45%, #f2fff3 100%);
+  color: var(--foreground);
+  font-family: var(--font-space-grotesk), sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
