@@ -52,3 +52,48 @@ export async function getAppointmentsByDate(dateKey: string, doctorId?: string, 
     .sort({ startAt: 1 })
     .lean();
 }
+
+export async function getCancelledAppointmentsByDate(dateKey: string, doctorId?: string, clinicId?: string) {
+  await connectToDatabase();
+
+  const query: Record<string, unknown> = {
+    appointmentDate: dateKey,
+    status: "CANCELLED",
+  };
+  if (doctorId) {
+    query.doctorId = new Types.ObjectId(doctorId);
+  }
+  if (clinicId) {
+    query.clinicId = clinicId;
+  }
+
+  return AppointmentModel.find(query)
+    .populate("patientId")
+    .populate("doctorId")
+    .sort({ startAt: 1 })
+    .lean();
+}
+
+export async function getPatientAppointmentHistory(params: {
+  patientId: string;
+  clinicId: string;
+  doctorId?: string;
+}) {
+  await connectToDatabase();
+
+  const query: Record<string, unknown> = {
+    patientId: new Types.ObjectId(params.patientId),
+    clinicId: params.clinicId,
+  };
+
+  if (params.doctorId) {
+    query.doctorId = new Types.ObjectId(params.doctorId);
+  }
+
+  return AppointmentModel.find(query)
+    .populate("patientId")
+    .populate("doctorId")
+    .sort({ startAt: -1 })
+    .limit(200)
+    .lean();
+}

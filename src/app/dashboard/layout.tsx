@@ -14,7 +14,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <p className="text-sm font-semibold text-indigo-700">{session.user.clinicName}</p>
           <p className="text-sm">Signed in as {session.user.name} ({session.user.role})</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {session.user.role === "RECEPTIONIST" ? (
             <>
               <Link
@@ -41,6 +41,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
               >
                 Notifications
               </Link>
+              <Link
+                href="/dashboard/receptionist/cancelled"
+                className="border-2 border-black bg-[var(--panel)] px-3 py-2 text-sm font-semibold shadow-[3px_3px_0_0_#000]"
+              >
+                Cancelled
+              </Link>
+              <Link
+                href="/dashboard/receptionist/history"
+                className="border-2 border-black bg-[var(--panel)] px-3 py-2 text-sm font-semibold shadow-[3px_3px_0_0_#000]"
+              >
+                History
+              </Link>
             </>
           ) : null}
           {session.user.role === "DOCTOR" ? (
@@ -62,6 +74,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 className="border-2 border-black bg-[var(--panel)] px-3 py-2 text-sm font-semibold shadow-[3px_3px_0_0_#000]"
               >
                 Analytics
+              </Link>
+              <Link
+                href="/dashboard/doctor/cancelled"
+                className="border-2 border-black bg-[var(--panel)] px-3 py-2 text-sm font-semibold shadow-[3px_3px_0_0_#000]"
+              >
+                Cancelled
+              </Link>
+              <Link
+                href="/dashboard/doctor/history"
+                className="border-2 border-black bg-[var(--panel)] px-3 py-2 text-sm font-semibold shadow-[3px_3px_0_0_#000]"
+              >
+                History
               </Link>
             </>
           ) : null}
