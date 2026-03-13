@@ -17,6 +17,8 @@ const appointmentSchema = new Schema(
     status: { type: String, enum: APPOINTMENT_STATUSES, default: "SCHEDULED", index: true },
     notes: { type: String, default: "" },
     cancellationReason: { type: String, default: "" },
+    patientCancelToken: { type: String, index: true },
+    reminderSentAt: { type: Date },
   },
   { timestamps: true },
 );

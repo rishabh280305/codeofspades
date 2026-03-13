@@ -8,27 +8,68 @@ export function ScheduleAiSummary({ date }: { date: string }) {
   const [open, setOpen] = useState(true);
   const [error, setError] = useState("");
   const [speaking, setSpeaking] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audio, setAudio] = useState<HTMLAudioElement | null>(null);
 
-  function handleReadAloud() {
-    if (typeof window === "undefined" || !("speechSynthesis" in window) || !summary) {
+  async function handleReadAloud() {
+    if (!summary) {
       return;
     }
 
     if (speaking) {
-      window.speechSynthesis.cancel();
+      if (audio) {
+        audio.pause();
+        audio.currentTime = 0;
+      }
       setSpeaking(false);
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(summary.replace(/[-*]/g, " "));
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-    setSpeaking(true);
+    try {
+      setError("");
+      setSpeaking(true);
+
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: summary.replace(/[-*]/g, " ") }),
+      });
+
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "Unable to generate voice output");
+      }
+
+      const blob = await response.blob();
+      const nextAudioUrl = URL.createObjectURL(blob);
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+
+      const nextAudio = new Audio(nextAudioUrl);
+      nextAudio.onended = () => setSpeaking(false);
+      nextAudio.onerror = () => {
+        setError("Failed to play generated audio");
+        setSpeaking(false);
+      };
+
+      setAudioUrl(nextAudioUrl);
+      setAudio(nextAudio);
+      await nextAudio.play();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Read aloud failed");
+      setSpeaking(false);
+    }
   }
+
+  useEffect(() => {
+    return () => {
+      audio?.pause();
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+    };
+  }, [audio, audioUrl]);
 
   useEffect(() => {
     async function load() {

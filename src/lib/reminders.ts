@@ -5,6 +5,22 @@ const fromEmail = process.env.RESEND_FROM_EMAIL?.trim();
 
 const resend = resendApiKey ? new Resend(resendApiKey) : null;
 
+export type ClinicMailDetails = {
+  clinicName: string;
+  address: string;
+  phone: string;
+  email: string;
+  website: string;
+};
+
+export function buildCancelAppointmentUrl(token: string) {
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.NEXTAUTH_URL?.trim() ||
+    "http://localhost:3000";
+  return `${base}/api/appointments/cancel?token=${encodeURIComponent(token)}`;
+}
+
 export async function sendAppointmentEmail(params: {
   to?: string;
   subject: string;

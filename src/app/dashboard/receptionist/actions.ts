@@ -1,14 +1,17 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { connectToDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/server-auth";
 import { AppointmentModel } from "@/models/Appointment";
+import { ClinicSettingsModel } from "@/models/ClinicSettings";
 import { PatientModel } from "@/models/Patient";
 import { getAvailableSlots, hasDoctorConflict } from "@/lib/appointments";
 import { combineDateAndTime } from "@/lib/time";
-import { sendAppointmentEmail } from "@/lib/reminders";
+import { appointmentCancelledTemplate, appointmentConfirmationTemplate } from "@/lib/email-templates";
+import { buildCancelAppointmentUrl, sendAppointmentEmail } from "@/lib/reminders";
 
 const patientSchema = z.object({
   fullName: z.string().min(2),
@@ -103,13 +106,14 @@ export async function createAppointmentAction(formData: FormData) {
     endAt: selectedSlot.endAt,
     reason: parsed.data.reason || "",
     status: "SCHEDULED",
+    patientCancelToken: randomUUID(),
   });
 
   const populated = await appointment.populate(["patientId", "doctorId"]);
-  const clinicName = session.user.clinicName || "Clinic";
+  const clinicSettings = await ClinicSettingsModel.findOne({ clinicId: session.user.clinicId }).lean();
+  const clinicName = clinicSettings?.clinicName || session.user.clinicName || "Clinic";
   const patientName = populated.patientId?.fullName ?? "Patient";
   const doctorName = populated.doctorId?.name ?? "Doctor";
-  const patientPhone = populated.patientId?.phone ?? "N/A";
   const reason = parsed.data.reason || "General consultation";
 
   if (!populated.patientId?.email) {
@@ -119,20 +123,26 @@ export async function createAppointmentAction(formData: FormData) {
   const emailResult = await sendAppointmentEmail({
     to: populated.patientId?.email,
     subject: `Appointment Confirmed - ${clinicName}`,
-    html: `
-      <h2 style="margin-bottom:8px;">Appointment Confirmation</h2>
-      <p>Hello ${patientName},</p>
-      <p>Your appointment has been booked successfully.</p>
-      <ul>
-        <li><strong>Clinic:</strong> ${clinicName}</li>
-        <li><strong>Doctor:</strong> ${doctorName}</li>
-        <li><strong>Date:</strong> ${parsed.data.appointmentDate}</li>
-        <li><strong>Time:</strong> ${selectedSlot.startTime} - ${selectedSlot.endTime}</li>
-        <li><strong>Reason:</strong> ${reason}</li>
-        <li><strong>Patient Contact:</strong> ${patientPhone}</li>
-      </ul>
-      <p>Please arrive 10 minutes early.</p>
-    `,
+    html: appointmentConfirmationTemplate({
+      clinic: {
+        clinicName,
+        address: [clinicSettings?.addressLine1, clinicSettings?.addressLine2, clinicSettings?.city, clinicSettings?.state, clinicSettings?.postalCode, clinicSettings?.country]
+          .filter(Boolean)
+          .join(", "),
+        phone: clinicSettings?.contactPhone || "",
+        email: clinicSettings?.contactEmail || "",
+        website: clinicSettings?.website || "",
+      },
+      appointment: {
+        patientName,
+        doctorName,
+        date: parsed.data.appointmentDate,
+        startTime: selectedSlot.startTime,
+        endTime: selectedSlot.endTime,
+        reason,
+      },
+      cancelUrl: buildCancelAppointmentUrl(String(appointment.patientCancelToken)),
+    }),
   });
 
   if (emailResult.skipped) {
@@ -144,7 +154,7 @@ export async function createAppointmentAction(formData: FormData) {
 }
 
 export async function cancelAppointmentAction(formData: FormData) {
-  await requireRole("RECEPTIONIST");
+  const session = await requireRole("RECEPTIONIST");
   await connectToDatabase();
 
   const appointmentId = String(formData.get("appointmentId") ?? "");
@@ -159,10 +169,32 @@ export async function cancelAppointmentAction(formData: FormData) {
     .populate("doctorId");
 
   if (appointment) {
+    const clinicSettings = await ClinicSettingsModel.findOne({ clinicId: session.user.clinicId }).lean();
+    const clinicName = clinicSettings?.clinicName || session.user.clinicName || "Clinic";
+
     await sendAppointmentEmail({
       to: appointment.patientId?.email,
-      subject: "Appointment Cancelled",
-      html: `<p>Your appointment on ${appointment.appointmentDate} at ${appointment.startTime} was cancelled.</p>`,
+      subject: `Appointment Cancelled - ${clinicName}`,
+      html: appointmentCancelledTemplate({
+        clinic: {
+          clinicName,
+          address: [clinicSettings?.addressLine1, clinicSettings?.addressLine2, clinicSettings?.city, clinicSettings?.state, clinicSettings?.postalCode, clinicSettings?.country]
+            .filter(Boolean)
+            .join(", "),
+          phone: clinicSettings?.contactPhone || "",
+          email: clinicSettings?.contactEmail || "",
+          website: clinicSettings?.website || "",
+        },
+        appointment: {
+          patientName: appointment.patientId?.fullName || "Patient",
+          doctorName: appointment.doctorId?.name || "Doctor",
+          date: appointment.appointmentDate,
+          startTime: appointment.startTime,
+          endTime: appointment.endTime,
+          reason: appointment.reason || "General consultation",
+        },
+        reason,
+      }),
     });
   }
 
@@ -171,7 +203,7 @@ export async function cancelAppointmentAction(formData: FormData) {
 }
 
 export async function rescheduleAppointmentAction(formData: FormData) {
-  await requireRole("RECEPTIONIST");
+  const session = await requireRole("RECEPTIONIST");
   await connectToDatabase();
 
   const appointmentId = String(formData.get("appointmentId") ?? "");
@@ -182,6 +214,10 @@ export async function rescheduleAppointmentAction(formData: FormData) {
   const appointment = await AppointmentModel.findById(appointmentId).populate(["patientId", "doctorId"]);
   if (!appointment) {
     throw new Error("Appointment not found.");
+  }
+
+  if (!appointment.patientCancelToken) {
+    appointment.patientCancelToken = randomUUID();
   }
 
   const endTime = combineDateAndTime(appointmentDate, startTime);
@@ -208,10 +244,32 @@ export async function rescheduleAppointmentAction(formData: FormData) {
 
   await appointment.save();
 
+  const clinicSettings = await ClinicSettingsModel.findOne({ clinicId: session.user.clinicId }).lean();
+  const clinicName = clinicSettings?.clinicName || session.user.clinicName || "Clinic";
+
   await sendAppointmentEmail({
     to: appointment.patientId?.email,
-    subject: "Appointment Rescheduled",
-    html: `<p>Your appointment was moved to ${appointmentDate} at ${startTime}.</p>`,
+    subject: `Appointment Rescheduled - ${clinicName}`,
+    html: appointmentConfirmationTemplate({
+      clinic: {
+        clinicName,
+        address: [clinicSettings?.addressLine1, clinicSettings?.addressLine2, clinicSettings?.city, clinicSettings?.state, clinicSettings?.postalCode, clinicSettings?.country]
+          .filter(Boolean)
+          .join(", "),
+        phone: clinicSettings?.contactPhone || "",
+        email: clinicSettings?.contactEmail || "",
+        website: clinicSettings?.website || "",
+      },
+      appointment: {
+        patientName: appointment.patientId?.fullName || "Patient",
+        doctorName: appointment.doctorId?.name || "Doctor",
+        date: appointmentDate,
+        startTime,
+        endTime: appointment.endTime,
+        reason: appointment.reason || "General consultation",
+      },
+      cancelUrl: buildCancelAppointmentUrl(String(appointment.patientCancelToken)),
+    }),
   });
 
   revalidatePath("/dashboard/receptionist");
