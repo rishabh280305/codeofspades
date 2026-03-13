@@ -60,15 +60,28 @@ export default async function DoctorDashboardPage({ searchParams }: DoctorPagePr
 
         <div className="space-y-3">
           {appointments.length === 0 ? <p className="text-sm">No appointments for this day.</p> : null}
-          {appointments.map((appointment) => (
-            <article key={String(appointment._id)} className="border-2 border-black bg-[var(--panel)] p-3">
+          {appointments.map((appointment) => {
+            const isCancelled = appointment.status === "CANCELLED";
+
+            return (
+            <article
+              key={String(appointment._id)}
+              className={`border-2 border-black p-3 ${isCancelled ? "bg-red-100" : "bg-[var(--panel)]"}`}
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-bold">
                   {appointment.startTime} - {appointment.endTime} | {appointment.patientId?.fullName}
                 </p>
-                <span className="border border-black bg-white px-2 py-1 text-xs font-semibold">{appointment.status}</span>
+                <span className={`border border-black px-2 py-1 text-xs font-semibold ${isCancelled ? "bg-red-200 text-red-800" : "bg-white"}`}>
+                  {appointment.status}
+                </span>
               </div>
 
+              {isCancelled ? (
+                <div className="mt-3 border-2 border-red-300 bg-red-50 p-2 text-sm font-semibold text-red-700">
+                  This appointment is cancelled. Actions are disabled.
+                </div>
+              ) : (
               <details className="mt-3 border-2 border-black bg-white">
                 <summary className="cursor-pointer px-3 py-2 text-sm font-bold hover:bg-gray-50">
                   Open Appointment
@@ -100,8 +113,9 @@ export default async function DoctorDashboardPage({ searchParams }: DoctorPagePr
                   )}
                 </div>
               </details>
+              )}
             </article>
-          ))}
+          )})}
         </div>
       </section>
 

@@ -7,6 +7,7 @@ import { connectToDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/server-auth";
 import { AppointmentModel } from "@/models/Appointment";
 import { ClinicSettingsModel } from "@/models/ClinicSettings";
+import { NotificationModel } from "@/models/Notification";
 import { PatientModel } from "@/models/Patient";
 import { getAvailableSlots, hasDoctorConflict } from "@/lib/appointments";
 import { combineDateAndTime } from "@/lib/time";
@@ -337,4 +338,41 @@ export async function rescheduleAppointmentAction(formData: FormData) {
 
   revalidatePath("/dashboard/receptionist");
   revalidatePath("/dashboard/doctor");
+}
+
+export async function markNotificationReadAction(formData: FormData) {
+  const session = await requireRole("RECEPTIONIST");
+  await connectToDatabase();
+
+  const notificationId = String(formData.get("notificationId") ?? "");
+  if (!notificationId) {
+    return;
+  }
+
+  await NotificationModel.updateOne(
+    {
+      _id: notificationId,
+      clinicId: session.user.clinicId,
+      recipientRole: "RECEPTIONIST",
+    },
+    { isRead: true },
+  );
+
+  revalidatePath("/dashboard/receptionist/notifications");
+}
+
+export async function markAllNotificationsReadAction() {
+  const session = await requireRole("RECEPTIONIST");
+  await connectToDatabase();
+
+  await NotificationModel.updateMany(
+    {
+      clinicId: session.user.clinicId,
+      recipientRole: "RECEPTIONIST",
+      isRead: false,
+    },
+    { isRead: true },
+  );
+
+  revalidatePath("/dashboard/receptionist/notifications");
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
 import { AppointmentModel } from "@/models/Appointment";
+import { NotificationModel } from "@/models/Notification";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -24,7 +25,18 @@ export async function GET(request: Request) {
 
   appointment.status = "CANCELLED";
   appointment.cancellationReason = "Cancelled by patient via secure email link";
+  await appointment.populate(["patientId", "doctorId"]);
   await appointment.save();
+
+  await NotificationModel.create({
+    clinicId: appointment.clinicId,
+    recipientRole: "RECEPTIONIST",
+    type: "PATIENT_CANCELLATION",
+    title: "Patient cancelled appointment",
+    message: `${appointment.patientId?.fullName || "A patient"} cancelled ${appointment.appointmentDate} at ${appointment.startTime} with ${appointment.doctorId?.name || "Doctor"}.`,
+    appointmentId: appointment._id,
+    isRead: false,
+  });
 
   return NextResponse.redirect(`${appUrl}/appointment-cancelled?status=success`);
 }

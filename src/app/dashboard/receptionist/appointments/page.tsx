@@ -66,15 +66,28 @@ export default async function ReceptionAppointmentsPage({ searchParams }: Recept
 
         <div className="mt-4 space-y-3">
           {appointments.length === 0 ? <p className="text-sm">No appointments found.</p> : null}
-          {appointments.map((appointment) => (
-            <article key={String(appointment._id)} className="border-2 border-black bg-[var(--panel)] p-3">
+          {appointments.map((appointment) => {
+            const isCancelled = appointment.status === "CANCELLED";
+
+            return (
+            <article
+              key={String(appointment._id)}
+              className={`border-2 border-black p-3 ${isCancelled ? "bg-red-100" : "bg-[var(--panel)]"}`}
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-bold">{appointment.startTime} - {appointment.endTime} | {appointment.patientId?.fullName}</p>
-                <span className="border border-black bg-white px-2 py-1 text-xs font-semibold">{appointment.status}</span>
+                <span className={`border border-black px-2 py-1 text-xs font-semibold ${isCancelled ? "bg-red-200 text-red-800" : "bg-white"}`}>
+                  {appointment.status}
+                </span>
               </div>
               <p className="text-sm">Doctor: {appointment.doctorId?.name}</p>
               <p className="text-sm">Reason: {appointment.reason || "General consultation"}</p>
 
+              {isCancelled ? (
+                <div className="mt-3 border-2 border-red-300 bg-red-50 p-2 text-sm font-semibold text-red-700">
+                  This appointment is cancelled. Actions are disabled.
+                </div>
+              ) : (
               <div className="mt-3 grid gap-2 md:grid-cols-3">
                 <form action={cancelAppointmentAction} className="space-y-2">
                   <input type="hidden" name="appointmentId" value={String(appointment._id)} />
@@ -95,8 +108,9 @@ export default async function ReceptionAppointmentsPage({ searchParams }: Recept
                   <button disabled={dbUnavailable} className="w-full border-2 border-black bg-white px-3 py-2 font-semibold disabled:opacity-50">Reschedule</button>
                 </form>
               </div>
+              )}
             </article>
-          ))}
+          )})}
         </div>
       </div>
     </section>

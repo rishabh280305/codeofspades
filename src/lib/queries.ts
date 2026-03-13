@@ -35,7 +35,10 @@ export async function getPatients(search = "", clinicId?: string) {
 export async function getAppointmentsByDate(dateKey: string, doctorId?: string, clinicId?: string) {
   await connectToDatabase();
 
-  const query: Record<string, unknown> = { appointmentDate: dateKey };
+  const query: Record<string, unknown> = {
+    appointmentDate: dateKey,
+    status: { $ne: "CANCELLED" },
+  };
   if (doctorId) {
     query.doctorId = new Types.ObjectId(doctorId);
   }
