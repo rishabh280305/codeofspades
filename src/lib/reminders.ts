@@ -21,6 +21,14 @@ export function buildCancelAppointmentUrl(token: string) {
   return `${base}/api/appointments/cancel?token=${encodeURIComponent(token)}`;
 }
 
+export function buildRescheduleRequestUrl(token: string) {
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.NEXTAUTH_URL?.trim() ||
+    "http://localhost:3000";
+  return `${base}/appointment-reschedule?token=${encodeURIComponent(token)}`;
+}
+
 export async function sendAppointmentEmail(params: {
   to?: string;
   subject: string;

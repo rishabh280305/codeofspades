@@ -12,7 +12,11 @@ import { PatientModel } from "@/models/Patient";
 import { getAvailableSlots, hasDoctorConflict } from "@/lib/appointments";
 import { combineDateAndTime } from "@/lib/time";
 import { appointmentCancelledTemplate, appointmentConfirmationTemplate } from "@/lib/email-templates";
-import { buildCancelAppointmentUrl, sendAppointmentEmail } from "@/lib/reminders";
+import {
+  buildCancelAppointmentUrl,
+  buildRescheduleRequestUrl,
+  sendAppointmentEmail,
+} from "@/lib/reminders";
 
 const patientSchema = z.object({
   fullName: z.string().min(2),
@@ -185,6 +189,7 @@ export async function createAppointmentAction(formData: FormData) {
         reason,
       },
       cancelUrl: buildCancelAppointmentUrl(String(appointment.patientCancelToken)),
+      rescheduleUrl: buildRescheduleRequestUrl(String(appointment.patientCancelToken)),
     }),
   });
 
@@ -333,6 +338,7 @@ export async function rescheduleAppointmentAction(formData: FormData) {
         reason: appointment.reason || "General consultation",
       },
       cancelUrl: buildCancelAppointmentUrl(String(appointment.patientCancelToken)),
+      rescheduleUrl: buildRescheduleRequestUrl(String(appointment.patientCancelToken)),
     }),
   });
 
@@ -375,4 +381,103 @@ export async function markAllNotificationsReadAction() {
   );
 
   revalidatePath("/dashboard/receptionist/notifications");
+}
+
+export async function approveRescheduleRequestAction(formData: FormData) {
+  const session = await requireRole("RECEPTIONIST");
+  await connectToDatabase();
+
+  const appointmentId = String(formData.get("appointmentId") ?? "");
+  if (!appointmentId) {
+    throw new Error("Missing appointment id.");
+  }
+
+  const appointment = await AppointmentModel.findOne({
+    _id: appointmentId,
+    clinicId: session.user.clinicId,
+  }).populate(["patientId", "doctorId"]);
+
+  if (!appointment) {
+    throw new Error("Appointment not found.");
+  }
+
+  if (appointment.rescheduleRequestStatus !== "PENDING") {
+    throw new Error("No pending reschedule request for this appointment.");
+  }
+
+  const requestedDate = appointment.requestedAppointmentDate;
+  const requestedStartTime = appointment.requestedStartTime;
+  const requestedEndTime = appointment.requestedEndTime;
+  if (!requestedDate || !requestedStartTime || !requestedEndTime) {
+    throw new Error("Requested slot details are incomplete.");
+  }
+
+  const startAt = combineDateAndTime(requestedDate, requestedStartTime);
+  const endAt = combineDateAndTime(requestedDate, requestedEndTime);
+
+  const hasConflict = await hasDoctorConflict({
+    doctorId: String(appointment.doctorId._id),
+    startAt,
+    endAt,
+    excludeAppointmentId: String(appointment._id),
+  });
+
+  if (hasConflict) {
+    throw new Error("Requested slot is no longer available.");
+  }
+
+  appointment.appointmentDate = requestedDate;
+  appointment.startTime = requestedStartTime;
+  appointment.endTime = requestedEndTime;
+  appointment.startAt = startAt;
+  appointment.endAt = endAt;
+  appointment.status = "SCHEDULED";
+  appointment.rescheduleRequestStatus = "APPROVED";
+  appointment.rescheduleApprovedAt = new Date();
+  appointment.requestedAppointmentDate = "";
+  appointment.requestedStartTime = "";
+  appointment.requestedEndTime = "";
+  await appointment.save();
+
+  await NotificationModel.updateMany(
+    {
+      clinicId: session.user.clinicId,
+      type: "RESCHEDULE_REQUEST",
+      appointmentId: appointment._id,
+    },
+    { isRead: true },
+  );
+
+  const clinicSettings = await ClinicSettingsModel.findOne({ clinicId: session.user.clinicId }).lean();
+  const clinicName = clinicSettings?.clinicName || session.user.clinicName || "Clinic";
+
+  await sendAppointmentEmail({
+    to: appointment.patientId?.email,
+    subject: `Appointment Rescheduled - ${clinicName}`,
+    html: appointmentConfirmationTemplate({
+      clinic: {
+        clinicName,
+        address: [clinicSettings?.addressLine1, clinicSettings?.addressLine2, clinicSettings?.city, clinicSettings?.state, clinicSettings?.postalCode, clinicSettings?.country]
+          .filter(Boolean)
+          .join(", "),
+        phone: clinicSettings?.contactPhone || "",
+        email: clinicSettings?.contactEmail || "",
+        website: clinicSettings?.website || "",
+      },
+      appointment: {
+        patientName: appointment.patientId?.fullName || "Patient",
+        doctorName: appointment.doctorId?.name || "Doctor",
+        date: appointment.appointmentDate,
+        startTime: appointment.startTime,
+        endTime: appointment.endTime,
+        reason: appointment.reason || "General consultation",
+      },
+      cancelUrl: buildCancelAppointmentUrl(String(appointment.patientCancelToken)),
+      rescheduleUrl: buildRescheduleRequestUrl(String(appointment.patientCancelToken)),
+    }),
+  });
+
+  revalidatePath("/dashboard/receptionist/notifications");
+  revalidatePath("/dashboard/receptionist/appointments");
+  revalidatePath("/dashboard/doctor");
 }

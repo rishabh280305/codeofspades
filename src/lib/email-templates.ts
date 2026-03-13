@@ -66,13 +66,17 @@ export function appointmentConfirmationTemplate(params: {
   clinic: ClinicInfo;
   appointment: AppointmentInfo;
   cancelUrl: string;
+  rescheduleUrl?: string;
 }) {
   const content = `
     <p style="margin:0 0 12px 0;font-size:15px;">Dear ${params.appointment.patientName},</p>
     <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;">Your appointment has been successfully scheduled. Please find the details below.</p>
     ${detailsBlock(params.appointment)}
-    <p style="margin:16px 0 0 0;font-size:14px;line-height:1.6;">If you need to cancel this appointment, use the secure link below:</p>
-    <p style="margin:10px 0 0 0;"><a href="${params.cancelUrl}" style="display:inline-block;padding:10px 14px;background:#9b1c1c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">Cancel Appointment</a></p>
+    <p style="margin:16px 0 0 0;font-size:14px;line-height:1.6;">Need to make a change? You can cancel or request a reschedule below:</p>
+    <p style="margin:10px 0 0 0;display:flex;gap:8px;flex-wrap:wrap;">
+      <a href="${params.cancelUrl}" style="display:inline-block;padding:10px 14px;background:#9b1c1c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">Cancel Appointment</a>
+      ${params.rescheduleUrl ? `<a href="${params.rescheduleUrl}" style="display:inline-block;padding:10px 14px;background:#0b3d91;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">Request Reschedule</a>` : ""}
+    </p>
     <p style="margin:14px 0 0 0;font-size:12px;color:#586b8f;">Please arrive 10 minutes before your scheduled time.</p>
   `;
 
@@ -83,13 +87,17 @@ export function appointmentReminderTemplate(params: {
   clinic: ClinicInfo;
   appointment: AppointmentInfo;
   cancelUrl: string;
+  rescheduleUrl?: string;
 }) {
   const content = `
     <p style="margin:0 0 12px 0;font-size:15px;">Dear ${params.appointment.patientName},</p>
     <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;">This is a reminder for your appointment scheduled for tomorrow.</p>
     ${detailsBlock(params.appointment)}
-    <p style="margin:16px 0 0 0;font-size:14px;line-height:1.6;">If you can no longer attend, please cancel using this secure link:</p>
-    <p style="margin:10px 0 0 0;"><a href="${params.cancelUrl}" style="display:inline-block;padding:10px 14px;background:#9b1c1c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">Cancel Appointment</a></p>
+    <p style="margin:16px 0 0 0;font-size:14px;line-height:1.6;">If you can no longer attend, you may cancel or request a reschedule:</p>
+    <p style="margin:10px 0 0 0;display:flex;gap:8px;flex-wrap:wrap;">
+      <a href="${params.cancelUrl}" style="display:inline-block;padding:10px 14px;background:#9b1c1c;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">Cancel Appointment</a>
+      ${params.rescheduleUrl ? `<a href="${params.rescheduleUrl}" style="display:inline-block;padding:10px 14px;background:#0b3d91;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">Request Reschedule</a>` : ""}
+    </p>
   `;
 
   return shell("Appointment Reminder", "Appointment Tomorrow", content, params.clinic);

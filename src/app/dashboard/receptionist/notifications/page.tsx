@@ -2,6 +2,7 @@ import { connectToDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/server-auth";
 import { NotificationModel } from "@/models/Notification";
 import {
+  approveRescheduleRequestAction,
   markAllNotificationsReadAction,
   markNotificationReadAction,
 } from "@/app/dashboard/receptionist/actions";
@@ -54,6 +55,15 @@ export default async function ReceptionistNotificationsPage() {
                 </span>
               </div>
               <p className="mt-1 text-sm">{notification.message}</p>
+
+              {notification.type === "RESCHEDULE_REQUEST" && notification.appointmentId ? (
+                <form action={approveRescheduleRequestAction} className="mt-3">
+                  <input type="hidden" name="appointmentId" value={String(notification.appointmentId)} />
+                  <button className="border-2 border-black bg-[#e8f8e8] px-3 py-1 text-xs font-semibold shadow-[2px_2px_0_0_#000]">
+                    Approve Reschedule
+                  </button>
+                </form>
+              ) : null}
 
               {!notification.isRead ? (
                 <form action={markNotificationReadAction} className="mt-3">

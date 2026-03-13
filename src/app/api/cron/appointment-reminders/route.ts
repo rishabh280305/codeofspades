@@ -1,7 +1,11 @@
 import { addDays, format } from "date-fns";
 import { NextResponse } from "next/server";
 import { connectToDatabase } from "@/lib/db";
-import { sendAppointmentEmail, buildCancelAppointmentUrl } from "@/lib/reminders";
+import {
+  sendAppointmentEmail,
+  buildCancelAppointmentUrl,
+  buildRescheduleRequestUrl,
+} from "@/lib/reminders";
 import { appointmentReminderTemplate } from "@/lib/email-templates";
 import { AppointmentModel } from "@/models/Appointment";
 import { ClinicSettingsModel } from "@/models/ClinicSettings";
@@ -56,6 +60,7 @@ export async function GET(request: Request) {
         reason: (appointment.reason as string) || "General consultation",
       },
       cancelUrl: buildCancelAppointmentUrl(token),
+      rescheduleUrl: buildRescheduleRequestUrl(token),
     });
 
     const result = await sendAppointmentEmail({

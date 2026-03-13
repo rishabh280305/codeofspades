@@ -19,6 +19,17 @@ const appointmentSchema = new Schema(
     cancellationReason: { type: String, default: "" },
     patientCancelToken: { type: String, index: true },
     reminderSentAt: { type: Date },
+    rescheduleRequestStatus: {
+      type: String,
+      enum: ["NONE", "PENDING", "APPROVED", "REJECTED"],
+      default: "NONE",
+      index: true,
+    },
+    requestedAppointmentDate: { type: String },
+    requestedStartTime: { type: String },
+    requestedEndTime: { type: String },
+    requestedAt: { type: Date },
+    rescheduleApprovedAt: { type: Date },
   },
   { timestamps: true },
 );
