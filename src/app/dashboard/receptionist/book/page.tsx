@@ -3,8 +3,7 @@ import { connectToDatabase } from "@/lib/db";
 import { getAvailableSlots } from "@/lib/appointments";
 import { getDoctors, getPatients } from "@/lib/queries";
 import { requireRole } from "@/lib/server-auth";
-import { createAppointmentAction } from "@/app/dashboard/receptionist/actions";
-import { AddPatientInline } from "./AddPatientInline";
+import { BookAppointmentForm } from "./BookAppointmentForm";
 
 type ReceptionBookPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -22,8 +21,9 @@ export default async function ReceptionBookPage({ searchParams }: ReceptionBookP
   const params = await searchParams;
 
   const slotMinutes = Number(process.env.CLINIC_SLOT_MINUTES ?? 30);
-  const selectedDoctorForSlots = readValue(params.slotDoctorId);
-  const selectedDateForSlots = readValue(params.slotDate) || format(new Date(), "yyyy-MM-dd");
+  const selectedDoctorForSlots = readValue(params.slotDoctorId) || readValue(params.doctorId);
+  const selectedDateForSlots =
+    readValue(params.slotDate) || readValue(params.appointmentDate) || format(new Date(), "yyyy-MM-dd");
 
   let dbUnavailable = false;
   let doctors: Array<{ _id: string; name: string }> = [];
@@ -77,47 +77,15 @@ export default async function ReceptionBookPage({ searchParams }: ReceptionBookP
         </div>
       </div>
 
-      <div className="border-2 border-black bg-white p-4 shadow-[6px_6px_0_0_#000]">
-        <h2 className="text-lg font-black">Book Appointment</h2>
-        <form action={createAppointmentAction} className="mt-3 space-y-2">
-          <input type="hidden" name="slotMinutes" value={String(slotMinutes)} />
-
-          <div>
-            <select name="patientId" required className="w-full border-2 border-black px-3 py-2">
-              <option value="">Select patient</option>
-              {patients.map((patient) => (
-                <option key={String(patient._id)} value={String(patient._id)}>
-                  {patient.fullName} | {patient.phone}
-                </option>
-              ))}
-            </select>
-            <AddPatientInline />
-          </div>
-
-          <select name="doctorId" required defaultValue={selectedDoctorForSlots} className="w-full border-2 border-black px-3 py-2">
-            <option value="">Select doctor</option>
-            {doctors.map((doctor) => (
-              <option key={String(doctor._id)} value={String(doctor._id)}>
-                {doctor.name}
-              </option>
-            ))}
-          </select>
-
-          <input type="date" name="appointmentDate" required defaultValue={selectedDateForSlots} className="w-full border-2 border-black px-3 py-2" />
-
-          <select name="startTime" required className="w-full border-2 border-black px-3 py-2">
-            <option value="">Select available slot</option>
-            {availableSlots.map((slot) => (
-              <option key={`${slot.startTime}-${slot.endTime}`} value={slot.startTime}>
-                {slot.startTime} - {slot.endTime}
-              </option>
-            ))}
-          </select>
-
-          <textarea name="reason" placeholder="Reason for visit" className="w-full border-2 border-black px-3 py-2" />
-          <button disabled={dbUnavailable} className="w-full border-2 border-black bg-black px-3 py-2 font-semibold text-white shadow-[3px_3px_0_0_#000] disabled:opacity-50">Create Appointment</button>
-        </form>
-      </div>
+      <BookAppointmentForm
+        doctors={doctors}
+        patients={patients}
+        initialDoctorId={selectedDoctorForSlots}
+        initialDate={selectedDateForSlots}
+        initialSlots={availableSlots}
+        slotMinutes={slotMinutes}
+        dbUnavailable={dbUnavailable}
+      />
     </div>
   );
 }
