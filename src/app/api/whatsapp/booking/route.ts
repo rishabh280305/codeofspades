@@ -16,6 +16,7 @@ import {
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
 import { AppointmentModel } from "@/models/Appointment";
 import { ClinicSettingsModel } from "@/models/ClinicSettings";
+import { NotificationModel } from "@/models/Notification";
 import { PatientModel } from "@/models/Patient";
 import { UserModel } from "@/models/User";
 import { WhatsAppBookingSessionModel } from "@/models/WhatsAppBookingSession";
@@ -50,6 +51,33 @@ function normalizeIncomingPhone(raw: string) {
   return value;
 }
 
+function digitsOnly(input: string) {
+  return input.replace(/\D/g, "");
+}
+
+function patientPhoneQueryVariants(phone: string) {
+  const digits = digitsOnly(phone);
+  const last10 = digits.slice(-10);
+  const variants = new Set<string>();
+
+  if (phone.startsWith("+")) {
+    variants.add(phone);
+  }
+  if (digits.startsWith("91") && digits.length >= 12) {
+    variants.add(`+${digits}`);
+    variants.add(digits.slice(-10));
+  }
+  if (digits.length === 10) {
+    variants.add(digits);
+    variants.add(`+91${digits}`);
+  }
+  if (last10.length === 10) {
+    variants.add(last10);
+  }
+
+  return Array.from(variants);
+}
+
 function sanitizeText(raw: string) {
   return raw.trim().replace(/\s+/g, " ");
 }
@@ -60,8 +88,8 @@ function isResetCommand(text: string) {
 }
 
 function isBookIntent(text: string) {
-  const lower = text.toLowerCase();
-  return lower.includes("book") || lower.includes("appointment");
+  const lower = text.toLowerCase().trim();
+  return ["book", "book appointment", "new appointment", "book slot", "start booking"].includes(lower);
 }
 
 function parseDateInput(text: string) {
@@ -137,7 +165,28 @@ export async function POST(request: Request) {
 
   await connectToDatabase();
 
-  const patient = await PatientModel.findOne({ phone: { $regex: `${from.slice(-10)}$` } }).lean();
+  const phoneVariants = patientPhoneQueryVariants(from);
+  const matchingPatients = await PatientModel.find({ phone: { $in: phoneVariants } })
+    .sort({ updatedAt: -1 })
+    .limit(10)
+    .lean();
+
+  if (matchingPatients.length === 0) {
+    return twimlMessage(
+      "We could not find your patient profile. Please contact clinic reception to register your WhatsApp number.",
+    );
+  }
+
+  const clinicIds = Array.from(
+    new Set(matchingPatients.map((entry) => String(entry.clinicId || "")).filter(Boolean)),
+  );
+  if (clinicIds.length > 1) {
+    return twimlMessage(
+      "Your phone is linked to multiple clinic profiles. Please contact reception to complete booking.",
+    );
+  }
+
+  const patient = matchingPatients[0];
   if (!patient?.clinicId) {
     return twimlMessage(
       "We could not find your patient profile. Please contact clinic reception to register your WhatsApp number.",
@@ -163,7 +212,7 @@ export async function POST(request: Request) {
 
   if (currentState === "IDLE") {
     if (!isBookIntent(body)) {
-      return twimlMessage("Welcome! Send BOOK APPOINTMENT to start booking.");
+      return twimlMessage("Welcome! To book an appointment, reply exactly: BOOK APPOINTMENT");
     }
 
     await upsertSession(from, {
@@ -387,6 +436,16 @@ export async function POST(request: Request) {
         cancelUrl: buildCancelAppointmentUrl(String(appointment.patientCancelToken)),
         rescheduleUrl: buildRescheduleRequestUrl(String(appointment.patientCancelToken)),
       }),
+    });
+
+    await NotificationModel.create({
+      clinicId,
+      recipientRole: "RECEPTIONIST",
+      type: "WHATSAPP_BOOKING",
+      title: "Appointment booked via WhatsApp",
+      message: `${patientName} booked ${selectedDate} ${chosenSlot.startTime}-${chosenSlot.endTime} with ${doctorName}.`,
+      appointmentId: appointment._id,
+      isRead: false,
     });
 
     await resetSession(from);

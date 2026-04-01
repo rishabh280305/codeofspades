@@ -30,6 +30,9 @@ const appointmentSchema = new Schema(
     requestedEndTime: { type: String },
     requestedAt: { type: Date },
     rescheduleApprovedAt: { type: Date },
+    feedbackRating: { type: Number, min: 1, max: 5 },
+    feedbackComment: { type: String, default: "" },
+    feedbackSubmittedAt: { type: Date },
   },
   { timestamps: true },
 );

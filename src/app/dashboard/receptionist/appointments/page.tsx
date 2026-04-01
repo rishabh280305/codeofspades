@@ -68,6 +68,7 @@ export default async function ReceptionAppointmentsPage({ searchParams }: Recept
           {appointments.length === 0 ? <p className="text-sm">No appointments found.</p> : null}
           {appointments.map((appointment) => {
             const isCancelled = appointment.status === "CANCELLED";
+            const isFinalized = ["CANCELLED", "COMPLETED", "NO_SHOW"].includes(String(appointment.status));
 
             return (
             <article
@@ -83,11 +84,7 @@ export default async function ReceptionAppointmentsPage({ searchParams }: Recept
               <p className="text-sm">Doctor: {appointment.doctorId?.name}</p>
               <p className="text-sm">Reason: {appointment.reason || "General consultation"}</p>
 
-              {isCancelled ? (
-                <div className="mt-3 border-2 border-red-300 bg-red-50 p-2 text-sm font-semibold text-red-700">
-                  This appointment is cancelled. Actions are disabled.
-                </div>
-              ) : (
+              {!isFinalized ? (
               <div className="mt-3 grid gap-2 md:grid-cols-3">
                 <form action={cancelAppointmentAction} className="space-y-2">
                   <input type="hidden" name="appointmentId" value={String(appointment._id)} />
@@ -108,7 +105,7 @@ export default async function ReceptionAppointmentsPage({ searchParams }: Recept
                   <button disabled={dbUnavailable} className="w-full border-2 border-black bg-white px-3 py-2 font-semibold disabled:opacity-50">Reschedule</button>
                 </form>
               </div>
-              )}
+              ) : null}
             </article>
           )})}
         </div>

@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { getAppBaseUrl } from "@/lib/app-url";
 
 const resendApiKey = process.env.RESEND_API_KEY?.trim();
 const fromEmail = process.env.RESEND_FROM_EMAIL?.trim();
@@ -14,19 +15,18 @@ export type ClinicMailDetails = {
 };
 
 export function buildCancelAppointmentUrl(token: string) {
-  const base =
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    process.env.NEXTAUTH_URL?.trim() ||
-    "http://localhost:3000";
+  const base = getAppBaseUrl();
   return `${base}/api/appointments/cancel?token=${encodeURIComponent(token)}`;
 }
 
 export function buildRescheduleRequestUrl(token: string) {
-  const base =
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    process.env.NEXTAUTH_URL?.trim() ||
-    "http://localhost:3000";
+  const base = getAppBaseUrl();
   return `${base}/appointment-reschedule?token=${encodeURIComponent(token)}`;
+}
+
+export function buildFeedbackUrl(token: string) {
+  const base = getAppBaseUrl();
+  return `${base}/appointment-feedback?token=${encodeURIComponent(token)}`;
 }
 
 export async function sendAppointmentEmail(params: {

@@ -200,7 +200,7 @@ export function appointmentFeedbackWhatsAppText(params: {
     `Appointment completed with ${params.appointment.doctorName}`,
     `Date: ${params.appointment.date}`,
     `Time: ${params.appointment.startTime} - ${params.appointment.endTime}`,
-    "Please share your feedback to help us improve.",
-    params.feedbackUrl ? `Feedback: ${params.feedbackUrl}` : "Reply to this message with your feedback.",
+    "Please share feedback using this secure form:",
+    params.feedbackUrl ? `Feedback: ${params.feedbackUrl}` : "Feedback form link unavailable. Please contact clinic.",
   ].join("\n");
 }

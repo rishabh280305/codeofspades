@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { getAppBaseUrl } from "@/lib/app-url";
 import { connectToDatabase } from "@/lib/db";
 import { getAvailableSlots } from "@/lib/appointments";
 import { AppointmentModel } from "@/models/Appointment";
 import { NotificationModel } from "@/models/Notification";
 
 export async function POST(request: Request) {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.NEXTAUTH_URL?.trim() || "http://localhost:3000";
+  const appUrl = getAppBaseUrl();
 
   const formData = await request.formData();
   const token = String(formData.get("token") ?? "").trim();

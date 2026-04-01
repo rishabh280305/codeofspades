@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { connectToDatabase } from "@/lib/db";
@@ -11,7 +12,7 @@ import {
   appointmentFeedbackTemplate,
   appointmentFeedbackWhatsAppText,
 } from "@/lib/email-templates";
-import { sendAppointmentEmail } from "@/lib/reminders";
+import { buildFeedbackUrl, sendAppointmentEmail } from "@/lib/reminders";
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
 
 const blockSlotSchema = z.object({
@@ -63,6 +64,11 @@ export async function completeAppointmentAction(formData: FormData) {
     throw new Error("Appointment not found.");
   }
 
+  if (!appointment.patientCancelToken) {
+    appointment.patientCancelToken = randomUUID();
+    await appointment.save();
+  }
+
   await appointment.populate(["patientId", "doctorId"]);
 
   const clinicSettings = await ClinicSettingsModel.findOne({ clinicId: session.user.clinicId }).lean();
@@ -83,7 +89,7 @@ export async function completeAppointmentAction(formData: FormData) {
     website: clinicSettings?.website || "",
   };
 
-  const feedbackUrl = process.env.PATIENT_FEEDBACK_URL?.trim() || undefined;
+  const feedbackUrl = buildFeedbackUrl(String(appointment.patientCancelToken));
   const appointmentInfo = {
     patientName: appointment.patientId?.fullName || "Patient",
     doctorName: appointment.doctorId?.name || "Doctor",
@@ -93,24 +99,28 @@ export async function completeAppointmentAction(formData: FormData) {
     reason: appointment.reason || "General consultation",
   };
 
-  await sendAppointmentEmail({
-    to: appointment.patientId?.email,
-    subject: `We value your feedback - ${clinic.clinicName}`,
-    html: appointmentFeedbackTemplate({
-      clinic,
-      appointment: appointmentInfo,
-      feedbackUrl,
-    }),
-  });
+  try {
+    await sendAppointmentEmail({
+      to: appointment.patientId?.email,
+      subject: `We value your feedback - ${clinic.clinicName}`,
+      html: appointmentFeedbackTemplate({
+        clinic,
+        appointment: appointmentInfo,
+        feedbackUrl,
+      }),
+    });
 
-  await sendWhatsAppMessage({
-    to: appointment.patientId?.phone,
-    body: appointmentFeedbackWhatsAppText({
-      clinic,
-      appointment: appointmentInfo,
-      feedbackUrl,
-    }),
-  });
+    await sendWhatsAppMessage({
+      to: appointment.patientId?.phone,
+      body: appointmentFeedbackWhatsAppText({
+        clinic,
+        appointment: appointmentInfo,
+        feedbackUrl,
+      }),
+    });
+  } catch (error) {
+    console.error("Post-completion feedback notification failed", error);
+  }
 
   revalidatePath("/dashboard/doctor");
   revalidatePath("/dashboard/receptionist");

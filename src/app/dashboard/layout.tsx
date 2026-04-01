@@ -53,6 +53,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
               >
                 History
               </Link>
+              <Link
+                href="/dashboard/feedback"
+                className="border-2 border-black bg-[var(--panel)] px-3 py-2 text-sm font-semibold shadow-[3px_3px_0_0_#000]"
+              >
+                Feedback
+              </Link>
             </>
           ) : null}
           {session.user.role === "DOCTOR" ? (
@@ -86,6 +92,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 className="border-2 border-black bg-[var(--panel)] px-3 py-2 text-sm font-semibold shadow-[3px_3px_0_0_#000]"
               >
                 History
+              </Link>
+              <Link
+                href="/dashboard/feedback"
+                className="border-2 border-black bg-[var(--panel)] px-3 py-2 text-sm font-semibold shadow-[3px_3px_0_0_#000]"
+              >
+                Feedback
               </Link>
             </>
           ) : null}

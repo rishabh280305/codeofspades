@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { requireRole } from "@/lib/server-auth";
 import { AppointmentModel } from "@/models/Appointment";
+import { AnalyticsAiChat } from "@/components/doctor/AnalyticsAiChat";
 
 function BarChart({
   title,
@@ -178,6 +179,8 @@ export default async function DoctorAnalyticsPage() {
           }))}
         />
       </section>
+
+      <AnalyticsAiChat />
     </div>
   );
 }

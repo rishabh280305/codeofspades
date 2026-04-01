@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAppBaseUrl } from "@/lib/app-url";
 import { connectToDatabase } from "@/lib/db";
 import { AppointmentModel } from "@/models/Appointment";
 import { NotificationModel } from "@/models/Notification";
@@ -6,7 +7,7 @@ import { NotificationModel } from "@/models/Notification";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const token = searchParams.get("token")?.trim();
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.NEXTAUTH_URL?.trim() || "http://localhost:3000";
+  const appUrl = getAppBaseUrl();
 
   if (!token) {
     return NextResponse.redirect(`${appUrl}/appointment-cancelled?status=invalid`);
