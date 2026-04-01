@@ -350,6 +350,7 @@ export async function POST(request: Request) {
       website: clinicSettings?.website || "",
     };
 
+    const doctor = doctors.find((item) => item._id === selectedDoctorId);
     const patientName = String(patient.fullName || "Patient");
     const doctorName = doctor?.name || "Doctor";
 
