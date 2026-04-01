@@ -169,3 +169,38 @@ export function appointmentCancelledWhatsAppText(params: {
     `Reason: ${params.reason || "No reason provided"}`,
   ].join("\n");
 }
+
+export function appointmentFeedbackTemplate(params: {
+  clinic: ClinicInfo;
+  appointment: AppointmentInfo;
+  feedbackUrl?: string;
+}) {
+  const content = `
+    <p style="margin:0 0 12px 0;font-size:15px;">Dear ${params.appointment.patientName},</p>
+    <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;">Thank you for visiting us today. We hope your consultation with ${params.appointment.doctorName} was helpful.</p>
+    ${detailsBlock(params.appointment)}
+    <p style="margin:16px 0 0 0;font-size:14px;line-height:1.6;">We would love your feedback to keep improving care quality.</p>
+    ${
+      params.feedbackUrl
+        ? `<p style="margin:10px 0 0 0;"><a href="${params.feedbackUrl}" style="display:inline-block;padding:10px 14px;background:#0b3d91;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">Share Feedback</a></p>`
+        : ""
+    }
+  `;
+
+  return shell("Thank You For Visiting", "Share Feedback", content, params.clinic);
+}
+
+export function appointmentFeedbackWhatsAppText(params: {
+  clinic: ClinicInfo;
+  appointment: AppointmentInfo;
+  feedbackUrl?: string;
+}) {
+  return [
+    `Thank you for visiting ${params.clinic.clinicName}.`,
+    `Appointment completed with ${params.appointment.doctorName}`,
+    `Date: ${params.appointment.date}`,
+    `Time: ${params.appointment.startTime} - ${params.appointment.endTime}`,
+    "Please share your feedback to help us improve.",
+    params.feedbackUrl ? `Feedback: ${params.feedbackUrl}` : "Reply to this message with your feedback.",
+  ].join("\n");
+}

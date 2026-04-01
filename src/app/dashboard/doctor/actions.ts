@@ -7,6 +7,12 @@ import { requireRole } from "@/lib/server-auth";
 import { AppointmentModel } from "@/models/Appointment";
 import { ClinicSettingsModel } from "@/models/ClinicSettings";
 import { DoctorAvailabilityModel } from "@/models/DoctorAvailability";
+import {
+  appointmentFeedbackTemplate,
+  appointmentFeedbackWhatsAppText,
+} from "@/lib/email-templates";
+import { sendAppointmentEmail } from "@/lib/reminders";
+import { sendWhatsAppMessage } from "@/lib/whatsapp";
 
 const blockSlotSchema = z.object({
   dayOfWeek: z.coerce.number().int().min(0).max(6),
@@ -40,7 +46,7 @@ export async function completeAppointmentAction(formData: FormData) {
   const appointmentId = String(formData.get("appointmentId") ?? "");
   const notes = String(formData.get("notes") ?? "");
 
-  await AppointmentModel.updateOne(
+  const appointment = await AppointmentModel.findOneAndUpdate(
     {
       _id: appointmentId,
       doctorId: session.user.id,
@@ -50,7 +56,61 @@ export async function completeAppointmentAction(formData: FormData) {
       status: "COMPLETED",
       notes,
     },
+    { new: true },
   );
+
+  if (!appointment) {
+    throw new Error("Appointment not found.");
+  }
+
+  await appointment.populate(["patientId", "doctorId"]);
+
+  const clinicSettings = await ClinicSettingsModel.findOne({ clinicId: session.user.clinicId }).lean();
+  const clinic = {
+    clinicName: clinicSettings?.clinicName || session.user.clinicName || "Clinic",
+    address: [
+      clinicSettings?.addressLine1,
+      clinicSettings?.addressLine2,
+      clinicSettings?.city,
+      clinicSettings?.state,
+      clinicSettings?.postalCode,
+      clinicSettings?.country,
+    ]
+      .filter(Boolean)
+      .join(", "),
+    phone: clinicSettings?.contactPhone || "",
+    email: clinicSettings?.contactEmail || "",
+    website: clinicSettings?.website || "",
+  };
+
+  const feedbackUrl = process.env.PATIENT_FEEDBACK_URL?.trim() || undefined;
+  const appointmentInfo = {
+    patientName: appointment.patientId?.fullName || "Patient",
+    doctorName: appointment.doctorId?.name || "Doctor",
+    date: appointment.appointmentDate,
+    startTime: appointment.startTime,
+    endTime: appointment.endTime,
+    reason: appointment.reason || "General consultation",
+  };
+
+  await sendAppointmentEmail({
+    to: appointment.patientId?.email,
+    subject: `We value your feedback - ${clinic.clinicName}`,
+    html: appointmentFeedbackTemplate({
+      clinic,
+      appointment: appointmentInfo,
+      feedbackUrl,
+    }),
+  });
+
+  await sendWhatsAppMessage({
+    to: appointment.patientId?.phone,
+    body: appointmentFeedbackWhatsAppText({
+      clinic,
+      appointment: appointmentInfo,
+      feedbackUrl,
+    }),
+  });
 
   revalidatePath("/dashboard/doctor");
   revalidatePath("/dashboard/receptionist");
