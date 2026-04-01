@@ -200,7 +200,7 @@ export async function createAppointmentAction(formData: FormData) {
     }),
   });
 
-  await sendWhatsAppMessage({
+  const whatsappResult = await sendWhatsAppMessage({
     to: populated.patientId?.phone,
     body: appointmentConfirmationWhatsAppText({
       clinic: {
@@ -229,7 +229,33 @@ export async function createAppointmentAction(formData: FormData) {
     console.warn("Appointment created but confirmation email could not be sent.", emailResult.reason);
   }
 
+  if (whatsappResult.skipped) {
+    console.warn("Appointment created but WhatsApp confirmation could not be sent.", whatsappResult.reason);
+    await NotificationModel.create({
+      clinicId: session.user.clinicId,
+      recipientRole: "RECEPTIONIST",
+      type: "WHATSAPP_DELIVERY",
+      title: "WhatsApp confirmation failed",
+      message: `Appointment for ${patientName} was created, but WhatsApp confirmation was not delivered${
+        whatsappResult.reason ? ` (${whatsappResult.reason})` : ""
+      }.`,
+      appointmentId: appointment._id,
+    });
+  } else {
+    await NotificationModel.create({
+      clinicId: session.user.clinicId,
+      recipientRole: "RECEPTIONIST",
+      type: "WHATSAPP_DELIVERY",
+      title: "WhatsApp confirmation sent",
+      message: `WhatsApp confirmation sent to ${patientName}${
+        whatsappResult.to ? ` (${whatsappResult.to.replace("whatsapp:", "")})` : ""
+      }.`,
+      appointmentId: appointment._id,
+    });
+  }
+
   revalidatePath("/dashboard/receptionist");
+  revalidatePath("/dashboard/receptionist/notifications");
   revalidatePath("/dashboard/doctor");
 }
 
