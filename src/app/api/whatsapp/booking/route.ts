@@ -4,8 +4,18 @@ import { NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { connectToDatabase } from "@/lib/db";
 import { getAvailableSlots, hasDoctorConflict } from "@/lib/appointments";
-import { combineDateAndTime } from "@/lib/time";
+import {
+  appointmentConfirmationTemplate,
+  appointmentConfirmationWhatsAppText,
+} from "@/lib/email-templates";
+import {
+  buildCancelAppointmentUrl,
+  buildRescheduleRequestUrl,
+  sendAppointmentEmail,
+} from "@/lib/reminders";
+import { sendWhatsAppMessage } from "@/lib/whatsapp";
 import { AppointmentModel } from "@/models/Appointment";
+import { ClinicSettingsModel } from "@/models/ClinicSettings";
 import { PatientModel } from "@/models/Patient";
 import { UserModel } from "@/models/User";
 import { WhatsAppBookingSessionModel } from "@/models/WhatsAppBookingSession";
@@ -307,7 +317,7 @@ export async function POST(request: Request) {
     const doctorObjectId = new Types.ObjectId(selectedDoctorId);
     const createdByObjectId = new Types.ObjectId(String(fallbackCreator._id));
 
-    await AppointmentModel.create({
+    const appointment = await AppointmentModel.create({
       clinicId,
       patientId: patientObjectId,
       doctorId: doctorObjectId,
@@ -322,8 +332,63 @@ export async function POST(request: Request) {
       patientCancelToken: randomUUID(),
     });
 
+    const clinicSettings = await ClinicSettingsModel.findOne({ clinicId }).lean();
+    const clinic = {
+      clinicName: clinicSettings?.clinicName || "Clinic",
+      address: [
+        clinicSettings?.addressLine1,
+        clinicSettings?.addressLine2,
+        clinicSettings?.city,
+        clinicSettings?.state,
+        clinicSettings?.postalCode,
+        clinicSettings?.country,
+      ]
+        .filter(Boolean)
+        .join(", "),
+      phone: clinicSettings?.contactPhone || "",
+      email: clinicSettings?.contactEmail || "",
+      website: clinicSettings?.website || "",
+    };
+
+    const patientName = String(patient.fullName || "Patient");
+    const doctorName = doctor?.name || "Doctor";
+
+    await sendAppointmentEmail({
+      to: patient.email,
+      subject: `Appointment Confirmed - ${clinic.clinicName}`,
+      html: appointmentConfirmationTemplate({
+        clinic,
+        appointment: {
+          patientName,
+          doctorName,
+          date: selectedDate,
+          startTime: chosenSlot.startTime,
+          endTime: chosenSlot.endTime,
+          reason,
+        },
+        cancelUrl: buildCancelAppointmentUrl(String(appointment.patientCancelToken)),
+        rescheduleUrl: buildRescheduleRequestUrl(String(appointment.patientCancelToken)),
+      }),
+    });
+
+    await sendWhatsAppMessage({
+      to: patient.phone,
+      body: appointmentConfirmationWhatsAppText({
+        clinic,
+        appointment: {
+          patientName,
+          doctorName,
+          date: selectedDate,
+          startTime: chosenSlot.startTime,
+          endTime: chosenSlot.endTime,
+          reason,
+        },
+        cancelUrl: buildCancelAppointmentUrl(String(appointment.patientCancelToken)),
+        rescheduleUrl: buildRescheduleRequestUrl(String(appointment.patientCancelToken)),
+      }),
+    });
+
     await resetSession(from);
-    const doctor = doctors.find((item) => item._id === selectedDoctorId);
     return twimlMessage(
       [
         "Your appointment is booked successfully.",
