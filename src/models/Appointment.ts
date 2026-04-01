@@ -1,6 +1,7 @@
 import { Schema, model, models, Types, type InferSchemaType } from "mongoose";
 
 export const APPOINTMENT_STATUSES = ["SCHEDULED", "COMPLETED", "CANCELLED", "NO_SHOW"] as const;
+export const PAYMENT_STATUSES = ["UNPAID", "PENDING_ONLINE", "PAID_CASH", "PAID_ONLINE"] as const;
 
 const appointmentSchema = new Schema(
   {
@@ -33,6 +34,15 @@ const appointmentSchema = new Schema(
     feedbackRating: { type: Number, min: 1, max: 5 },
     feedbackComment: { type: String, default: "" },
     feedbackSubmittedAt: { type: Date },
+    paymentStatus: { type: String, enum: PAYMENT_STATUSES, default: "UNPAID", index: true },
+    paymentMethod: { type: String, enum: ["CASH", "STRIPE"] },
+    paymentAmount: { type: Number, min: 0, default: 0 },
+    paymentCurrency: { type: String, default: "INR" },
+    paymentRequestedAt: { type: Date },
+    paymentPaidAt: { type: Date },
+    paymentNotes: { type: String, default: "" },
+    stripeCheckoutSessionId: { type: String, index: true },
+    stripePaymentUrl: { type: String, default: "" },
   },
   { timestamps: true },
 );

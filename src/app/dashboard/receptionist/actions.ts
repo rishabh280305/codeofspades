@@ -16,12 +16,17 @@ import {
   appointmentCancelledWhatsAppText,
   appointmentConfirmationTemplate,
   appointmentConfirmationWhatsAppText,
+  appointmentPaymentRequestTemplate,
+  appointmentPaymentRequestWhatsAppText,
 } from "@/lib/email-templates";
 import {
   buildCancelAppointmentUrl,
+  buildFeedbackUrl,
   buildRescheduleRequestUrl,
   sendAppointmentEmail,
 } from "@/lib/reminders";
+import { getAppBaseUrl } from "@/lib/app-url";
+import { getStripeClient, toMinorUnit } from "@/lib/stripe";
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
 
 const patientSchema = z.object({
@@ -47,6 +52,37 @@ const bookSchema = z.object({
   reason: z.string().optional(),
   slotMinutes: z.coerce.number().int().min(15).max(120),
 });
+
+const cashPaymentSchema = z.object({
+  appointmentId: z.string().min(1),
+  amount: z.coerce.number().positive(),
+  notes: z.string().optional(),
+});
+
+const stripePaymentSchema = z.object({
+  appointmentId: z.string().min(1),
+  amount: z.coerce.number().positive(),
+  currency: z.string().trim().min(3).max(3).default("INR"),
+});
+
+function buildClinicCard(settings: any, fallbackName: string) {
+  return {
+    clinicName: settings?.clinicName || fallbackName || "Clinic",
+    address: [
+      settings?.addressLine1,
+      settings?.addressLine2,
+      settings?.city,
+      settings?.state,
+      settings?.postalCode,
+      settings?.country,
+    ]
+      .filter(Boolean)
+      .join(", "),
+    phone: settings?.contactPhone || "",
+    email: settings?.contactEmail || "",
+    website: settings?.website || "",
+  };
+}
 
 export async function addPatientAction(formData: FormData) {
   const session = await requireRole("RECEPTIONIST");
@@ -451,6 +487,178 @@ export async function rescheduleAppointmentAction(formData: FormData) {
 
   revalidatePath("/dashboard/receptionist");
   revalidatePath("/dashboard/doctor");
+}
+
+export async function markCashPaymentAction(formData: FormData) {
+  const session = await requireRole("RECEPTIONIST");
+  await connectToDatabase();
+
+  const parsed = cashPaymentSchema.safeParse({
+    appointmentId: formData.get("appointmentId"),
+    amount: formData.get("amount"),
+    notes: formData.get("notes"),
+  });
+
+  if (!parsed.success) {
+    throw new Error("Invalid cash payment details.");
+  }
+
+  const appointment = await AppointmentModel.findOneAndUpdate(
+    {
+      _id: parsed.data.appointmentId,
+      clinicId: session.user.clinicId,
+      status: "COMPLETED",
+    },
+    {
+      paymentStatus: "PAID_CASH",
+      paymentMethod: "CASH",
+      paymentAmount: parsed.data.amount,
+      paymentCurrency: "INR",
+      paymentPaidAt: new Date(),
+      paymentNotes: parsed.data.notes || "",
+      stripeCheckoutSessionId: "",
+      stripePaymentUrl: "",
+    },
+    { new: true },
+  );
+
+  if (!appointment) {
+    throw new Error("Completed appointment not found.");
+  }
+
+  await NotificationModel.create({
+    clinicId: session.user.clinicId,
+    recipientRole: "DOCTOR",
+    type: "PAYMENT_RECEIVED",
+    title: "Cash payment recorded",
+    message: `Payment recorded for appointment ${appointment.appointmentDate} ${appointment.startTime}. Amount: INR ${parsed.data.amount.toFixed(2)}.`,
+    appointmentId: appointment._id,
+  });
+
+  revalidatePath("/dashboard/receptionist");
+  revalidatePath("/dashboard/receptionist/appointments");
+  revalidatePath("/dashboard/doctor/analytics");
+}
+
+export async function sendStripePaymentLinkAction(formData: FormData) {
+  const session = await requireRole("RECEPTIONIST");
+  await connectToDatabase();
+
+  const parsed = stripePaymentSchema.safeParse({
+    appointmentId: formData.get("appointmentId"),
+    amount: formData.get("amount"),
+    currency: formData.get("currency") ?? "INR",
+  });
+
+  if (!parsed.success) {
+    throw new Error("Invalid payment request payload.");
+  }
+
+  const currency = parsed.data.currency.toLowerCase();
+  const appointment = await AppointmentModel.findOne({
+    _id: parsed.data.appointmentId,
+    clinicId: session.user.clinicId,
+    status: "COMPLETED",
+  }).populate(["patientId", "doctorId"]);
+
+  if (!appointment) {
+    throw new Error("Completed appointment not found.");
+  }
+
+  if (!appointment.patientCancelToken) {
+    appointment.patientCancelToken = randomUUID();
+  }
+
+  const clinicSettings = await ClinicSettingsModel.findOne({ clinicId: session.user.clinicId }).lean();
+  const clinic = buildClinicCard(clinicSettings, session.user.clinicName);
+  const stripe = getStripeClient();
+  const appBaseUrl = getAppBaseUrl();
+  const feedbackUrl = buildFeedbackUrl(String(appointment.patientCancelToken));
+
+  const checkoutSession = await stripe.checkout.sessions.create({
+    mode: "payment",
+    success_url: `${feedbackUrl}&payment=success`,
+    cancel_url: `${appBaseUrl}/appointment-feedback?token=${encodeURIComponent(String(appointment.patientCancelToken))}&payment=cancelled`,
+    customer_email: appointment.patientId?.email || undefined,
+    metadata: {
+      appointmentId: String(appointment._id),
+      clinicId: session.user.clinicId,
+      patientName: appointment.patientId?.fullName || "Patient",
+      doctorName: appointment.doctorId?.name || "Doctor",
+    },
+    line_items: [
+      {
+        quantity: 1,
+        price_data: {
+          currency,
+          unit_amount: toMinorUnit(parsed.data.amount),
+          product_data: {
+            name: `Consultation - ${clinic.clinicName}`,
+            description: `${appointment.appointmentDate} | ${appointment.startTime}-${appointment.endTime} | ${appointment.doctorId?.name || "Doctor"}`,
+          },
+        },
+      },
+    ],
+  });
+
+  const paymentUrl = checkoutSession.url;
+  if (!paymentUrl) {
+    throw new Error("Unable to generate Stripe payment link.");
+  }
+
+  appointment.paymentStatus = "PENDING_ONLINE";
+  appointment.paymentMethod = "STRIPE";
+  appointment.paymentAmount = parsed.data.amount;
+  appointment.paymentCurrency = currency.toUpperCase();
+  appointment.paymentRequestedAt = new Date();
+  appointment.stripeCheckoutSessionId = checkoutSession.id;
+  appointment.stripePaymentUrl = paymentUrl;
+  await appointment.save();
+
+  const appointmentInfo = {
+    patientName: appointment.patientId?.fullName || "Patient",
+    doctorName: appointment.doctorId?.name || "Doctor",
+    date: appointment.appointmentDate,
+    startTime: appointment.startTime,
+    endTime: appointment.endTime,
+    reason: appointment.reason || "General consultation",
+  };
+
+  await sendAppointmentEmail({
+    to: appointment.patientId?.email,
+    subject: `Payment Link - ${clinic.clinicName}`,
+    html: appointmentPaymentRequestTemplate({
+      clinic,
+      appointment: appointmentInfo,
+      paymentUrl,
+      amount: parsed.data.amount,
+      currency: currency.toUpperCase(),
+    }),
+  });
+
+  await sendWhatsAppMessage({
+    to: appointment.patientId?.phone,
+    body: appointmentPaymentRequestWhatsAppText({
+      clinic,
+      appointment: appointmentInfo,
+      paymentUrl,
+      amount: parsed.data.amount,
+      currency: currency.toUpperCase(),
+    }),
+  });
+
+  await NotificationModel.create({
+    clinicId: session.user.clinicId,
+    recipientRole: "DOCTOR",
+    type: "PAYMENT_LINK_SENT",
+    title: "Payment link sent",
+    message: `Stripe payment link sent to ${appointment.patientId?.fullName || "patient"} for ${currency.toUpperCase()} ${parsed.data.amount.toFixed(2)}.`,
+    appointmentId: appointment._id,
+  });
+
+  revalidatePath("/dashboard/receptionist");
+  revalidatePath("/dashboard/receptionist/appointments");
+  revalidatePath("/dashboard/doctor/analytics");
 }
 
 export async function markNotificationReadAction(formData: FormData) {

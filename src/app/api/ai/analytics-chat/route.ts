@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   const currentMonth = format(new Date(), "yyyy-MM");
   const sixMonthsAgo = format(subMonths(new Date(), 5), "yyyy-MM");
 
-  const [monthly, byHour, byStatus, currentMonthAppointments, uniquePatients] = await Promise.all([
+  const [monthly, byHour, byStatus, paymentSummary, currentMonthAppointments, uniquePatients] = await Promise.all([
     AppointmentModel.aggregate([
       {
         $match: {
@@ -93,6 +93,26 @@ export async function POST(request: Request) {
         },
       },
     ]) as Promise<Array<{ _id: string; count: number }>>,
+    AppointmentModel.aggregate([
+      {
+        $match: {
+          clinicId: session.user.clinicId,
+          doctorId: doctorObjectId,
+          status: "COMPLETED",
+        },
+      },
+      {
+        $group: {
+          _id: "$paymentStatus",
+          count: { $sum: 1 },
+          amount: {
+            $sum: {
+              $cond: [{ $gt: ["$paymentAmount", 0] }, "$paymentAmount", 0],
+            },
+          },
+        },
+      },
+    ]) as Promise<Array<{ _id: string; count: number; amount: number }>>,
     AppointmentModel.countDocuments({
       clinicId: session.user.clinicId,
       doctorId: doctorObjectId,
@@ -112,6 +132,10 @@ export async function POST(request: Request) {
   const cancelledCount = byStatus.find((s) => s._id === "CANCELLED")?.count ?? 0;
   const totalTrackable = completedCount + noShowCount + scheduledCount;
   const completionRate = totalTrackable > 0 ? Math.round((completedCount / totalTrackable) * 100) : 0;
+  const paidCashAmount = paymentSummary.find((p) => p._id === "PAID_CASH")?.amount ?? 0;
+  const paidOnlineAmount = paymentSummary.find((p) => p._id === "PAID_ONLINE")?.amount ?? 0;
+  const pendingOnlineAmount = paymentSummary.find((p) => p._id === "PENDING_ONLINE")?.amount ?? 0;
+  const totalRevenue = paidCashAmount + paidOnlineAmount;
 
   const leastUsed = [...byHour].sort((a, b) => a.count - b.count)[0] ?? null;
   const busiest = [...byHour].sort((a, b) => b.count - a.count)[0] ?? null;
@@ -143,6 +167,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ answer: `Cancelled appointments: ${cancelledCount}.` });
   }
 
+  if (/(revenue|income|earnings|financial)/.test(q)) {
+    return NextResponse.json({
+      answer: `Collected: INR ${Math.round(totalRevenue)} (Online INR ${Math.round(paidOnlineAmount)}, Cash INR ${Math.round(paidCashAmount)}). Pending online: INR ${Math.round(pendingOnlineAmount)}.`,
+    });
+  }
+
+  if (/(cash).*(payment|collected)|(payment|collected).*(cash)/.test(q)) {
+    return NextResponse.json({ answer: `Cash collected: INR ${Math.round(paidCashAmount)}.` });
+  }
+
+  if (/(online|stripe).*(payment|collected)|(payment|collected).*(online|stripe)/.test(q)) {
+    return NextResponse.json({
+      answer: `Online collected: INR ${Math.round(paidOnlineAmount)}. Pending online: INR ${Math.round(pendingOnlineAmount)}.`,
+    });
+  }
+
   const latestMonth = monthly[monthly.length - 1];
   const prevMonth = monthly[monthly.length - 2];
 
@@ -158,7 +198,7 @@ export async function POST(request: Request) {
         },
         {
           role: "user",
-          content: `Question: ${message}\n\nData:\nCurrent month appointments: ${currentMonthAppointments}\nUnique patients: ${uniquePatients.length}\nCompletion rate: ${completionRate}%\nNo-shows: ${noShowCount}\nCancelled: ${cancelledCount}\nBusiest slot: ${busiest?._id || "N/A"}:00 (${busiest?.count || 0})\nLeast-used slot: ${leastUsed?._id || "N/A"}:00 (${leastUsed?.count || 0})\nLast month visits: ${latestMonth?.count || 0}\nPrevious month visits: ${prevMonth?.count || 0}\n`,
+          content: `Question: ${message}\n\nData:\nCurrent month appointments: ${currentMonthAppointments}\nUnique patients: ${uniquePatients.length}\nCompletion rate: ${completionRate}%\nNo-shows: ${noShowCount}\nCancelled: ${cancelledCount}\nBusiest slot: ${busiest?._id || "N/A"}:00 (${busiest?.count || 0})\nLeast-used slot: ${leastUsed?._id || "N/A"}:00 (${leastUsed?.count || 0})\nLast month visits: ${latestMonth?.count || 0}\nPrevious month visits: ${prevMonth?.count || 0}\nRevenue collected: INR ${Math.round(totalRevenue)}\nOnline collected: INR ${Math.round(paidOnlineAmount)}\nCash collected: INR ${Math.round(paidCashAmount)}\nPending online amount: INR ${Math.round(pendingOnlineAmount)}\n`,
         },
       ],
       temperature: 0.2,
@@ -168,6 +208,6 @@ export async function POST(request: Request) {
     const answer = short(completion.choices[0]?.message?.content || "No insight available yet.");
     return NextResponse.json({ answer });
   } catch {
-    return NextResponse.json({ answer: "Try asking about busiest slot, least-used slot, no-shows, or completion rate." });
+    return NextResponse.json({ answer: "Try asking about busiest slot, completion rate, no-shows, or revenue collected." });
   }
 }

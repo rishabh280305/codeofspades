@@ -40,6 +40,14 @@ function BarChart({
   );
 }
 
+function formatInr(amount: number) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
 export default async function DoctorAnalyticsPage() {
   const session = await requireRole("DOCTOR");
   await connectToDatabase();
@@ -108,6 +116,27 @@ export default async function DoctorAnalyticsPage() {
     },
   ])) as Array<{ _id: string; count: number }>;
 
+  const paymentSummary = (await AppointmentModel.aggregate([
+    {
+      $match: {
+        clinicId: session.user.clinicId,
+        doctorId: doctorObjectId,
+        status: "COMPLETED",
+      },
+    },
+    {
+      $group: {
+        _id: "$paymentStatus",
+        count: { $sum: 1 },
+        amount: {
+          $sum: {
+            $cond: [{ $gt: ["$paymentAmount", 0] }, "$paymentAmount", 0],
+          },
+        },
+      },
+    },
+  ])) as Array<{ _id: string; count: number; amount: number }>;
+
   const currentMonthAppointments = await AppointmentModel.countDocuments({
     clinicId: session.user.clinicId,
     doctorId: doctorObjectId,
@@ -126,6 +155,14 @@ export default async function DoctorAnalyticsPage() {
   const scheduledCount = byStatus.find((s) => s._id === "SCHEDULED")?.count ?? 0;
   const totalTrackable = completedCount + noShowCount + scheduledCount;
   const completionRate = totalTrackable > 0 ? Math.round((completedCount / totalTrackable) * 100) : 0;
+  const paidCashAmount = paymentSummary.find((p) => p._id === "PAID_CASH")?.amount ?? 0;
+  const paidOnlineAmount = paymentSummary.find((p) => p._id === "PAID_ONLINE")?.amount ?? 0;
+  const pendingOnlineAmount = paymentSummary.find((p) => p._id === "PENDING_ONLINE")?.amount ?? 0;
+  const totalCollected = paidCashAmount + paidOnlineAmount;
+  const paidCount =
+    (paymentSummary.find((p) => p._id === "PAID_CASH")?.count ?? 0) +
+    (paymentSummary.find((p) => p._id === "PAID_ONLINE")?.count ?? 0);
+  const avgCollectedTicket = paidCount > 0 ? totalCollected / paidCount : 0;
 
   return (
     <div className="space-y-4">
@@ -149,6 +186,29 @@ export default async function DoctorAnalyticsPage() {
           <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">No-shows</p>
           <p className="mt-1 text-2xl font-black">{noShowCount}</p>
           <p className="text-xs">Total no-show visits</p>
+        </article>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-4">
+        <article className="border-2 border-black bg-white p-4 shadow-[6px_6px_0_0_#000]">
+          <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Revenue Collected</p>
+          <p className="mt-1 text-2xl font-black">{formatInr(totalCollected)}</p>
+          <p className="text-xs">Cash + online paid</p>
+        </article>
+        <article className="border-2 border-black bg-white p-4 shadow-[6px_6px_0_0_#000]">
+          <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Pending Online</p>
+          <p className="mt-1 text-2xl font-black">{formatInr(pendingOnlineAmount)}</p>
+          <p className="text-xs">Awaiting Stripe checkout</p>
+        </article>
+        <article className="border-2 border-black bg-white p-4 shadow-[6px_6px_0_0_#000]">
+          <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Cash Collected</p>
+          <p className="mt-1 text-2xl font-black">{formatInr(paidCashAmount)}</p>
+          <p className="text-xs">Manual reception payments</p>
+        </article>
+        <article className="border-2 border-black bg-white p-4 shadow-[6px_6px_0_0_#000]">
+          <p className="text-xs font-bold uppercase tracking-wide text-zinc-500">Avg Ticket</p>
+          <p className="mt-1 text-2xl font-black">{formatInr(avgCollectedTicket)}</p>
+          <p className="text-xs">Average paid consultation</p>
         </article>
       </section>
 
@@ -177,6 +237,15 @@ export default async function DoctorAnalyticsPage() {
                     ? "#dc2626"
                     : "#6b7280",
           }))}
+        />
+
+        <BarChart
+          title="Payment Breakdown"
+          rows={[
+            { label: "Paid Online", value: Math.round(paidOnlineAmount), color: "#16a34a" },
+            { label: "Paid Cash", value: Math.round(paidCashAmount), color: "#2563eb" },
+            { label: "Pending Online", value: Math.round(pendingOnlineAmount), color: "#f59e0b" },
+          ]}
         />
       </section>
 

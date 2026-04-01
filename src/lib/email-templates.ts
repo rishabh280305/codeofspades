@@ -204,3 +204,42 @@ export function appointmentFeedbackWhatsAppText(params: {
     params.feedbackUrl ? `Feedback: ${params.feedbackUrl}` : "Feedback form link unavailable. Please contact clinic.",
   ].join("\n");
 }
+
+export function appointmentPaymentRequestTemplate(params: {
+  clinic: ClinicInfo;
+  appointment: AppointmentInfo;
+  paymentUrl: string;
+  amount: number;
+  currency?: string;
+}) {
+  const currency = (params.currency || "INR").toUpperCase();
+  const content = `
+    <p style="margin:0 0 12px 0;font-size:15px;">Dear ${params.appointment.patientName},</p>
+    <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;">Your consultation is completed. You can pay securely online using Stripe.</p>
+    ${detailsBlock(params.appointment)}
+    <p style="margin:16px 0 0 0;font-size:14px;"><strong>Amount Due:</strong> ${currency} ${params.amount.toFixed(2)}</p>
+    <p style="margin:10px 0 0 0;"><a href="${params.paymentUrl}" style="display:inline-block;padding:10px 14px;background:#0b3d91;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:700;">Pay Securely via Stripe</a></p>
+    <p style="margin:14px 0 0 0;font-size:12px;color:#586b8f;">If you need help with payment, reply to this message or contact the clinic reception.</p>
+  `;
+
+  return shell("Payment Link for Your Appointment", "Secure payment link", content, params.clinic);
+}
+
+export function appointmentPaymentRequestWhatsAppText(params: {
+  clinic: ClinicInfo;
+  appointment: AppointmentInfo;
+  paymentUrl: string;
+  amount: number;
+  currency?: string;
+}) {
+  const currency = (params.currency || "INR").toUpperCase();
+  return [
+    `Payment request from ${params.clinic.clinicName}`,
+    `Doctor: ${params.appointment.doctorName}`,
+    `Date: ${params.appointment.date}`,
+    `Time: ${params.appointment.startTime} - ${params.appointment.endTime}`,
+    `Amount due: ${currency} ${params.amount.toFixed(2)}`,
+    "Pay securely with Stripe:",
+    params.paymentUrl,
+  ].join("\n");
+}

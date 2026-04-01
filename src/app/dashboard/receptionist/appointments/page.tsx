@@ -5,7 +5,9 @@ import { requireRole } from "@/lib/server-auth";
 import {
   cancelAppointmentAction,
   markNoShowAppointmentAction,
+  markCashPaymentAction,
   rescheduleAppointmentAction,
+  sendStripePaymentLinkAction,
 } from "@/app/dashboard/receptionist/actions";
 
 type ReceptionAppointmentsPageProps = {
@@ -69,6 +71,10 @@ export default async function ReceptionAppointmentsPage({ searchParams }: Recept
           {appointments.map((appointment) => {
             const isCancelled = appointment.status === "CANCELLED";
             const isFinalized = ["CANCELLED", "COMPLETED", "NO_SHOW"].includes(String(appointment.status));
+            const isCompleted = appointment.status === "COMPLETED";
+            const paymentStatus = String(appointment.paymentStatus || "UNPAID");
+            const isPaid = paymentStatus === "PAID_CASH" || paymentStatus === "PAID_ONLINE";
+            const defaultAmount = Number(appointment.paymentAmount || 500);
 
             return (
             <article
@@ -83,6 +89,7 @@ export default async function ReceptionAppointmentsPage({ searchParams }: Recept
               </div>
               <p className="text-sm">Doctor: {appointment.doctorId?.name}</p>
               <p className="text-sm">Reason: {appointment.reason || "General consultation"}</p>
+              {isCompleted ? <p className="text-sm">Payment: {paymentStatus}</p> : null}
 
               {!isFinalized ? (
               <div className="mt-3 grid gap-2 md:grid-cols-3">
@@ -105,6 +112,64 @@ export default async function ReceptionAppointmentsPage({ searchParams }: Recept
                   <button disabled={dbUnavailable} className="w-full border-2 border-black bg-white px-3 py-2 font-semibold disabled:opacity-50">Reschedule</button>
                 </form>
               </div>
+              ) : null}
+
+              {isCompleted ? (
+                <div className="mt-3 border-2 border-black bg-white p-3">
+                  <p className="text-sm font-bold">Payment Collection</p>
+                  {isPaid ? (
+                    <p className="mt-1 text-sm">
+                      Paid via {appointment.paymentMethod || "N/A"} | {appointment.paymentCurrency || "INR"} {Number(appointment.paymentAmount || 0).toFixed(2)}
+                    </p>
+                  ) : (
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
+                      <form action={markCashPaymentAction} className="space-y-2 border border-black p-2">
+                        <input type="hidden" name="appointmentId" value={String(appointment._id)} />
+                        <input
+                          type="number"
+                          name="amount"
+                          min="1"
+                          step="0.01"
+                          defaultValue={defaultAmount}
+                          className="w-full border-2 border-black bg-white px-3 py-2"
+                          required
+                        />
+                        <input
+                          name="notes"
+                          placeholder="Cash note (optional)"
+                          className="w-full border-2 border-black bg-white px-3 py-2"
+                        />
+                        <button
+                          disabled={dbUnavailable}
+                          className="w-full border-2 border-black bg-white px-3 py-2 font-semibold disabled:opacity-50"
+                        >
+                          Mark Cash Paid
+                        </button>
+                      </form>
+
+                      <form action={sendStripePaymentLinkAction} className="space-y-2 border border-black p-2">
+                        <input type="hidden" name="appointmentId" value={String(appointment._id)} />
+                        <input type="hidden" name="currency" value="INR" />
+                        <input
+                          type="number"
+                          name="amount"
+                          min="1"
+                          step="0.01"
+                          defaultValue={defaultAmount}
+                          className="w-full border-2 border-black bg-white px-3 py-2"
+                          required
+                        />
+                        <button
+                          disabled={dbUnavailable}
+                          className="w-full border-2 border-black bg-black px-3 py-2 font-semibold text-white disabled:opacity-50"
+                        >
+                          Send Stripe Payment Link
+                        </button>
+                        <p className="text-xs text-zinc-600">Sends secure payment instructions over Email + WhatsApp.</p>
+                      </form>
+                    </div>
+                  )}
+                </div>
               ) : null}
             </article>
           )})}
